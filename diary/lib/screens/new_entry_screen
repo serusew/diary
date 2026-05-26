@@ -1,0 +1,416 @@
+// --- ЭКРАН СОЗДАНИЯ / РЕДАКТИРОВАНИЯ ---
+
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:file_picker/file_picker.dart';
+
+import '../theme/app_theme.dart';
+import '../models/diary_models.dart';
+
+
+class NewEntryScreen extends StatefulWidget {
+  final DiaryEntry? entry;
+  final Function(DiaryEntry) onSave;
+  final AppLanguage currentLang;
+  final ThemeConfig config;
+
+  const NewEntryScreen({
+    super.key,
+    this.entry,
+    required this.onSave,
+    required this.currentLang,
+    required this.config,
+  });
+
+  @override
+  State<NewEntryScreen> createState() => _NewEntryScreenState();
+}
+
+class _NewEntryScreenState extends State<NewEntryScreen> {
+  late String _id;
+  late TextEditingController _titleController;
+
+  final List<BlockContent> _blocks = [];
+  final List<TextEditingController> _blockControllers = [];
+
+  late DateTime _selectedDate;
+  String _selectedMood = '😊';
+  final List<PlacedSticker> _myStickers = [];
+
+  final List<String> _moods = ['😊', '🥳', '😭', '😡', '🐱', '✨'];
+  final List<String> _availableStickers = [
+    '❤️',
+    '⭐',
+    '🎀',
+    '🔥',
+    '🐾',
+    '🍀',
+    '👑',
+    '🧸',
+    '💡',
+    '🍕',
+    '🌸',
+    '🔮',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _id = widget.entry?.id ?? DateTime.now().toString();
+    _titleController = TextEditingController(text: widget.entry?.title ?? '');
+    _selectedDate = widget.entry?.date ?? DateTime.now();
+    _selectedMood = widget.entry?.moodEmoji ?? '😊';
+
+    if (widget.entry != null) {
+      _myStickers.addAll(widget.entry!.stickers);
+    }
+
+    if (widget.entry != null && widget.entry!.blocks.isNotEmpty) {
+      for (var b in widget.entry!.blocks) {
+        _blocks.add(BlockContent(type: b.type, value: b.value));
+        if (b.type == 'text') {
+          _blockControllers.add(TextEditingController(text: b.value));
+        } else {
+          _blockControllers.add(TextEditingController());
+        }
+      }
+    } else {
+      _blocks.add(BlockContent(type: 'text', value: ''));
+      _blockControllers.add(TextEditingController());
+    }
+
+    _titleController.addListener(_triggerAutoSave);
+    for (var controller in _blockControllers) {
+      controller.addListener(_triggerAutoSave);
+    }
+  }
+
+  void _triggerAutoSave() {
+    for (int i = 0; i < _blocks.length; i++) {
+      if (_blocks[i].type == 'text') {
+        _blocks[i].value = _blockControllers[i].text;
+      }
+    }
+    widget.onSave(
+      DiaryEntry(
+        id: _id,
+        title: _titleController.text,
+        blocks: _blocks,
+        date: _selectedDate,
+        moodEmoji: _selectedMood,
+        stickers: List.from(_myStickers),
+      ),
+    );
+  }
+
+  String _t(String ru, String en) =>
+      widget.currentLang == AppLanguage.ru ? ru : en;
+
+  void _pickInlineImage() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+    );
+    if (result != null && result.files.single.path != null) {
+      String path = result.files.single.path!;
+      setState(() {
+        _blocks.add(BlockContent(type: 'image', value: path));
+        _blockControllers.add(TextEditingController());
+
+        _blocks.add(BlockContent(type: 'text', value: ''));
+        var newController = TextEditingController();
+        newController.addListener(_triggerAutoSave);
+        _blockControllers.add(newController);
+      });
+      _triggerAutoSave();
+    }
+  }
+
+  void _openImageFullScreen(File file) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
+          body: Center(child: InteractiveViewer(child: Image.file(file))),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    for (var c in _blockControllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: widget.config.cardColor,
+        title: Text(
+          widget.entry != null
+              ? _t('Правка', 'Edit')
+              : _t('Новая мысль', 'New Entry'),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(
+              Icons.image_rounded,
+              size: 26,
+              color: Colors.greenAccent,
+            ),
+            onPressed: _pickInlineImage,
+          ),
+          IconButton(
+            icon: const Icon(
+              Icons.face_retouching_natural_rounded,
+              size: 26,
+              color: Colors.pinkAccent,
+            ),
+            onPressed: _showStickerPicker,
+          ),
+          IconButton(
+            icon: const Icon(Icons.done_rounded, size: 28),
+            onPressed: () {
+              _triggerAutoSave();
+              Navigator.pop(context);
+            },
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      '${_t('Дата', 'Date')}: ${DateFormat('dd.MM.yyyy').format(_selectedDate)}',
+                    ),
+                    trailing: const Icon(Icons.calendar_month),
+                    onTap: () async {
+                      final d = await showDatePicker(
+                        context: context,
+                        initialDate: _selectedDate,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2030),
+                      );
+                      if (d != null) {
+                        setState(() => _selectedDate = d);
+                        _triggerAutoSave();
+                      }
+                    },
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: _moods
+                        .map(
+                          (m) => InkWell(
+                            onTap: () {
+                              setState(() => _selectedMood = m);
+                              _triggerAutoSave();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _selectedMood == m
+                                    ? widget.config.accentColor.withValues(
+                                        alpha: 0.3,
+                                      )
+                                    : null,
+                              ),
+                              child: Text(
+                                m,
+                                style: const TextStyle(fontSize: 24),
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const Divider(),
+                  TextField(
+                    controller: _titleController,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: _t('Заголовок', 'Title'),
+                      border: InputBorder.none,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  ...List.generate(_blocks.length, (index) {
+                    final block = _blocks[index];
+                    if (block.type == 'text') {
+                      return TextField(
+                        controller: _blockControllers[index],
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: InputDecoration(
+                          hintText: index == 0
+                              ? _t('Пиши тут...', 'Write thoughts...')
+                              : '',
+                          border: InputBorder.none,
+                        ),
+                      );
+                    } else {
+                      final file = File(block.value);
+                      return Container(
+                        margin: const EdgeInsets.symmetric(vertical: 14),
+                        alignment: Alignment.centerLeft,
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: () => _openImageFullScreen(file),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: Image.file(
+                                  file,
+                                  fit: BoxFit.cover,
+                                  width: double.infinity,
+                                  height: 260,
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              right: 8,
+                              top: 8,
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    _blocks.removeAt(index);
+                                    _blockControllers.removeAt(index);
+                                  });
+                                  _triggerAutoSave();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withValues(alpha: 0.8),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.close,
+                                    size: 20,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  }),
+                  const SizedBox(height: 300),
+                ],
+              ),
+            ),
+
+            ..._myStickers.map((sticker) {
+              return Positioned(
+                left: sticker.position.dx,
+                top: sticker.position.dy,
+                child: GestureDetector(
+                  onPanUpdate: (details) {
+                    setState(() {
+                      sticker.position += details.delta;
+                    });
+                    _triggerAutoSave();
+                  },
+                  onDoubleTap: () {
+                    setState(() => _myStickers.remove(sticker));
+                    _triggerAutoSave();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.transparent,
+                    child: Text(
+                      sticker.emoji,
+                      style: const TextStyle(fontSize: 42),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showStickerPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: widget.config.cardColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        height: 220,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _t(
+                'Выбери стикер (Двойной тап для удаления):',
+                'Select sticker (Double tap to delete):',
+              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: GridView.builder(
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 6,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                ),
+                itemCount: _availableStickers.length,
+                itemBuilder: (context, index) {
+                  final st = _availableStickers[index];
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      setState(() {
+                        String newId = DateTime.now().microsecondsSinceEpoch
+                            .toString();
+                        _myStickers.add(
+                          PlacedSticker(
+                            id: newId,
+                            emoji: st,
+                            position: const Offset(140, 220),
+                          ),
+                        );
+                      });
+                      Navigator.pop(ctx);
+                      _triggerAutoSave();
+                    },
+                    child: Center(
+                      child: Text(st, style: const TextStyle(fontSize: 34)),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

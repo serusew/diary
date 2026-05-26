@@ -1,0 +1,678 @@
+// --- ГЛАВНЫЙ ЭКРАН ---
+
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../theme/app_theme.dart';
+import '../models/diary_models.dart';
+import 'new_entry_screen.dart';
+
+
+class DiaryHomePage extends StatefulWidget {
+  final ThemeConfig config;
+  final AppTheme currentTheme;
+  final AppLanguage currentLang;
+  final ValueChanged<AppTheme> onThemeChanged;
+  final ValueChanged<AppLanguage> onLangChanged;
+
+  const DiaryHomePage({
+    super.key,
+    required this.config,
+    required this.currentTheme,
+    required this.currentLang,
+    required this.onThemeChanged,
+    required this.onLangChanged,
+  });
+
+  @override
+  State<DiaryHomePage> createState() => _DiaryHomePageState();
+}
+
+class _DiaryHomePageState extends State<DiaryHomePage> {
+  final List<DiaryEntry> _allEntries = [];
+  List<DiaryEntry> _filteredEntries = [];
+  bool _isSearching = false;
+  double _scrollOffset = 0.0;
+  final _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEntriesFromStorage();
+    _searchController.addListener(_runSearch);
+
+    _scrollController.addListener(() {
+      setState(() {
+        _scrollOffset = _scrollController.offset;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadEntriesFromStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? cachedData = prefs.getString('diary_entries');
+    if (cachedData != null) {
+      final List<dynamic> decoded = jsonDecode(cachedData);
+      setState(() {
+        _allEntries.clear();
+        _allEntries.addAll(
+          decoded.map((item) => DiaryEntry.fromJson(item)).toList(),
+        );
+        _runSearch();
+      });
+    }
+  }
+
+  Future<void> _saveEntriesToStorage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String encoded = jsonEncode(
+      _allEntries.map((e) => e.toJson()).toList(),
+    );
+    await prefs.setString('diary_entries', encoded);
+  }
+
+  void _runSearch() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredEntries = query.isEmpty
+          ? _allEntries
+          : _allEntries
+                .where(
+                  (e) =>
+                      e.title.toLowerCase().contains(query) ||
+                      e.blocks.any(
+                        (b) =>
+                            b.type == 'text' &&
+                            b.value.toLowerCase().contains(query),
+                      ),
+                )
+                .toList();
+    });
+  }
+
+  void _saveOrUpdateEntry(DiaryEntry entry) {
+    setState(() {
+      final index = _allEntries.indexWhere((e) => e.id == entry.id);
+      if (index >= 0) {
+        _allEntries[index] = entry;
+      } else {
+        _allEntries.insert(0, entry);
+      }
+      _runSearch();
+    });
+    _saveEntriesToStorage();
+  }
+
+  String _t(String ru, String en) =>
+      widget.currentLang == AppLanguage.ru ? ru : en;
+
+  // Функция вызова окна подтверждения удаления
+  Future<bool?> _showDeleteConfirmationDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: widget.config.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(_t('Удалить?', 'Delete?')),
+        content: Text(
+          _t(
+            'Вы уверены, что хотите навсегда удалить эту запись из дневника?',
+            'Are you sure you want to permanently delete this diary entry?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false), // Отмена свайпа
+            child: Text(
+              _t('Отмена', 'Cancel'),
+              style: TextStyle(
+                color: widget.config.textColor.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () =>
+                Navigator.of(ctx).pop(true), // Подтверждение свайпа
+            child: Text(
+              _t('Удалить', 'Delete'),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      drawer: _buildDrawer(),
+      body: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: MediaQuery.of(context).size.height * 0.35,
+            child: ShaderMask(
+              shaderCallback: (rect) {
+                return LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black,
+                    Colors.black.withValues(alpha: 0.2),
+                    Colors.transparent,
+                  ],
+                  stops: const [0.0, 0.75, 1.0],
+                ).createShader(Rect.fromLTRB(0, 0, rect.width, rect.height));
+              },
+              blendMode: BlendMode.dstIn,
+              child: Image.asset(
+                widget.config.bgImageAsset,
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => Container(),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    decoration: BoxDecoration(
+                      color: widget.config.cardColor.withValues(alpha: 0.8),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      children: [
+                        Builder(
+                          builder: (ctx) => IconButton(
+                            icon: const Icon(Icons.menu_rounded, size: 28),
+                            onPressed: () => Scaffold.of(ctx).openDrawer(),
+                          ),
+                        ),
+                        Expanded(
+                          child: _isSearching
+                              ? TextField(
+                                  controller: _searchController,
+                                  autofocus: true,
+                                  decoration: InputDecoration(
+                                    hintText: _t('Поиск...', 'Search...'),
+                                    border: InputBorder.none,
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(Icons.close),
+                                      onPressed: () => setState(() {
+                                        _searchController.clear();
+                                        _isSearching = false;
+                                      }),
+                                    ),
+                                  ),
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.only(left: 8.0),
+                                  child: Text(
+                                    _t('Мой Дневник', 'My Diary'),
+                                    style: const TextStyle(
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        if (!_isSearching)
+                          IconButton(
+                            icon: const Icon(Icons.search_rounded, size: 28),
+                            onPressed: () =>
+                                setState(() => _isSearching = true),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 120),
+                Expanded(
+                  child: _filteredEntries.isEmpty
+                      ? Center(
+                          child: Text(
+                            _t(
+                              'Тут пока пусто... Нажми +',
+                              'Empty here... Press +',
+                            ),
+                          ),
+                        )
+                      : ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (Rect rect) {
+                            double topStop =
+                                (_scrollOffset / 40.0).clamp(0.0, 1.0) * 0.08;
+
+                            return LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: const [
+                                Colors.transparent,
+                                Colors.black,
+                                Colors.black,
+                                Colors.transparent,
+                              ],
+                              stops: [0.0, topStop, 0.92, 1.0],
+                            ).createShader(rect);
+                          },
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            itemCount: _filteredEntries.length,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                            ).copyWith(top: 8, bottom: 50),
+                            itemBuilder: (ctx, idx) {
+                              final entry = _filteredEntries[idx];
+                              String previewText = '';
+                              for (var b in entry.blocks) {
+                                if (b.type == 'text' && b.value.isNotEmpty) {
+                                  previewText = b.value;
+                                  break;
+                                }
+                              }
+                              return Dismissible(
+                                key: Key(entry.id),
+                                direction: DismissDirection.endToStart,
+                                // Проверка подтверждения удаления перед выполнением свайпа
+                                confirmDismiss: (direction) async {
+                                  return await _showDeleteConfirmationDialog();
+                                },
+                                background: Container(
+                                  alignment: Alignment.centerRight,
+                                  padding: const EdgeInsets.only(right: 20),
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.6),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Icon(
+                                    Icons.delete_forever,
+                                    color: Colors.white,
+                                    size: 30,
+                                  ),
+                                ),
+                                onDismissed: (direction) {
+                                  setState(() {
+                                    _allEntries.removeWhere(
+                                      (e) => e.id == entry.id,
+                                    );
+                                    _runSearch();
+                                  });
+                                  _saveEntriesToStorage();
+                                },
+                                child: GestureDetector(
+                                  onTap: () => _openEntryScreen(entry),
+                                  child: Container(
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: widget.config.cardColor.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              DateFormat(
+                                                'dd MMMM yyyy',
+                                                widget.currentLang ==
+                                                        AppLanguage.ru
+                                                    ? 'ru'
+                                                    : 'en',
+                                              ).format(entry.date),
+                                              style: TextStyle(
+                                                color:
+                                                    widget.config.accentColor,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            Text(
+                                              entry.moodEmoji,
+                                              style: const TextStyle(
+                                                fontSize: 22,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const Divider(height: 16),
+                                        Text(
+                                          entry.title.isEmpty
+                                              ? _t('Без названия', 'Untitled')
+                                              : entry.title,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        if (previewText.isNotEmpty) ...[
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            previewText,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: widget.config.textColor
+                                                  .withValues(alpha: 0.7),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: BottomAppBar(
+        shape: const CircularNotchedRectangle(),
+        notchMargin: 8.0,
+        child: Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.calendar_month_rounded, size: 28),
+              onPressed: _showCalendarDialog,
+            ),
+          ],
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: widget.config.accentColor,
+        shape: const CircleBorder(),
+        onPressed: () => _openEntryScreen(null),
+        child: Icon(Icons.add, size: 32, color: widget.config.backgroundColor),
+      ),
+    );
+  }
+
+  void _showCalendarDialog() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked != null) {
+      final dayEntries = _allEntries
+          .where(
+            (e) =>
+                e.date.year == picked.year &&
+                e.date.month == picked.month &&
+                e.date.day == picked.day,
+          )
+          .toList();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            '${_t('Заметки за', 'Entries for')} ${DateFormat('dd.MM.yyyy').format(picked)}',
+          ),
+          content: dayEntries.isEmpty
+              ? Text(_t('Нет записей.', 'No entries.'))
+              : SizedBox(
+                  width: double.maxFinite,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: dayEntries.length,
+                    itemBuilder: (c, i) => ListTile(
+                      leading: Text(
+                        dayEntries[i].moodEmoji,
+                        style: const TextStyle(fontSize: 20),
+                      ),
+                      title: Text(dayEntries[i].title),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _openEntryScreen(dayEntries[i]);
+                      },
+                    ),
+                  ),
+                ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Container(
+        color: widget.config.backgroundColor,
+        child: Column(
+          children: [
+            DrawerHeader(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    widget.config.cardColor,
+                    widget.config.backgroundColor,
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.auto_stories,
+                      size: 32,
+                      color: widget.config.accentColor,
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      _t('Настройки', 'Settings'),
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                children: [
+                  _buildMenuSectionTitle(
+                    _t('Язык / Language', 'Language / Язык'),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: widget.config.cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.g_translate_rounded,
+                        color: widget.config.accentColor,
+                      ),
+                      title: Text(_t('Язык:', 'Interface:')),
+                      trailing: DropdownButton<AppLanguage>(
+                        value: widget.currentLang,
+                        underline: const SizedBox(),
+                        dropdownColor: widget.config.cardColor,
+                        onChanged: (lang) {
+                          Navigator.pop(context);
+                          widget.onLangChanged(lang!);
+                        },
+                        items: const [
+                          DropdownMenuItem(
+                            value: AppLanguage.ru,
+                            child: Text('Русский'),
+                          ),
+                          DropdownMenuItem(
+                            value: AppLanguage.en,
+                            child: Text('English'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  _buildMenuSectionTitle(_t('Оформление', 'Style')),
+                  Theme(
+                    data: Theme.of(
+                      context,
+                    ).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      leading: Icon(
+                        Icons.palette_rounded,
+                        color: widget.config.accentColor,
+                      ),
+                      title: Text(_t('Выбрать тему', 'Select theme')),
+                      backgroundColor: widget.config.cardColor,
+                      collapsedBackgroundColor: widget.config.cardColor,
+                      textColor: widget.config.accentColor,
+                      iconColor: widget.config.accentColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      collapsedShape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Column(
+                            children: [
+                              _buildBeautifulThemeCard(
+                                _t('Глубокая синяя', 'Deep blue'),
+                                AppTheme.dark,
+                                Icons.bedtime_rounded,
+                                const Color(0xFF4C95FF),
+                              ),
+                              _buildBeautifulThemeCard(
+                                _t('Мятная зеленая', 'Mint green'),
+                                AppTheme.light,
+                                Icons.eco_rounded,
+                                const Color(0xFF2E7D32),
+                              ),
+                              _buildBeautifulThemeCard(
+                                _t('Розовая сакура', 'Cherry pink'),
+                                AppTheme.pink,
+                                Icons.auto_awesome_rounded,
+                                const Color(0xFFFF4081),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: widget.config.accentColor.withValues(alpha: 0.6),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBeautifulThemeCard(
+    String title,
+    AppTheme theme,
+    IconData icon,
+    Color previewColor,
+  ) {
+    bool isSelected = widget.currentTheme == theme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? widget.config.backgroundColor
+            : widget.config.backgroundColor.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: Icon(
+          icon,
+          color: isSelected ? widget.config.accentColor : previewColor,
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        trailing: isSelected
+            ? Icon(
+                Icons.check_circle,
+                color: widget.config.accentColor,
+                size: 20,
+              )
+            : null,
+        onTap: () {
+          Navigator.pop(context);
+          widget.onThemeChanged(theme);
+        },
+      ),
+    );
+  }
+
+  void _openEntryScreen(DiaryEntry? entry) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NewEntryScreen(
+          entry: entry,
+          onSave: _saveOrUpdateEntry,
+          currentLang: widget.currentLang,
+          config: widget.config,
+        ),
+      ),
+    );
+  }
+}
+

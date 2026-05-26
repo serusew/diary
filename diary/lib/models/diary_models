@@ -1,0 +1,81 @@
+// --- МОДЕЛИ ДАННЫХ ---
+
+import 'package:flutter/material.dart';
+
+
+class PlacedSticker {
+  final String id;
+  final String emoji;
+  Offset position;
+
+  PlacedSticker({
+    required this.id,
+    required this.emoji,
+    required this.position,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'emoji': emoji,
+    'dx': position.dx,
+    'dy': position.dy,
+  };
+
+  factory PlacedSticker.fromJson(Map<String, dynamic> json) => PlacedSticker(
+    id: json['id'],
+    emoji: json['emoji'],
+    position: Offset(json['dx'], json['dy']),
+  );
+}
+
+class BlockContent {
+  final String type;
+  String value;
+
+  BlockContent({required this.type, required this.value});
+
+  Map<String, dynamic> toJson() => {'type': type, 'value': value};
+  factory BlockContent.fromJson(Map<String, dynamic> json) =>
+      BlockContent(type: json['type'], value: json['value']);
+}
+
+class DiaryEntry {
+  String id;
+  String title;
+  List<BlockContent> blocks;
+  DateTime date;
+  String moodEmoji;
+  List<PlacedSticker> stickers;
+
+  DiaryEntry({
+    required this.id,
+    required this.title,
+    required this.blocks,
+    required this.date,
+    this.moodEmoji = '😊',
+    List<PlacedSticker>? stickers,
+  }) : stickers = stickers ?? [];
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'blocks': blocks.map((b) => b.toJson()).toList(),
+    'date': date.toIso8601String(),
+    'moodEmoji': moodEmoji,
+    'stickers': stickers.map((s) => s.toJson()).toList(),
+  };
+
+  factory DiaryEntry.fromJson(Map<String, dynamic> json) {
+    var blockList = (json['blocks'] as List? ?? []);
+    var stickerList = (json['stickers'] as List? ?? []);
+
+    return DiaryEntry(
+      id: json['id'],
+      title: json['title'],
+      blocks: blockList.map((b) => BlockContent.fromJson(b)).toList(),
+      date: DateTime.parse(json['date']),
+      moodEmoji: json['moodEmoji'] ?? '😊',
+      stickers: stickerList.map((s) => PlacedSticker.fromJson(s)).toList(),
+    );
+  }
+}

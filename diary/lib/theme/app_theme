@@ -1,0 +1,48 @@
+// --- СИСТЕМА ТЕМ ---
+
+import 'package:flutter/material.dart';
+
+
+enum AppTheme { dark, light, pink }
+
+enum AppLanguage { ru, en }
+
+class ThemeConfig {
+  final Color backgroundColor;
+  final Color cardColor;
+  final Color accentColor;
+  final Color textColor;
+  final String bgImageAsset;
+
+  ThemeConfig({
+    required this.backgroundColor,
+    required this.cardColor,
+    required this.accentColor,
+    required this.textColor,
+    required this.bgImageAsset,
+  });
+
+  static final darkConfig = ThemeConfig(
+    backgroundColor: const Color(0xFF060B19),
+    cardColor: const Color(0xFF0F1B35),
+    accentColor: const Color(0xFFFFA000),
+    textColor: const Color(0xFFE3EFFC),
+    bgImageAsset: 'assets/images/синий.jpg',
+  );
+
+  static final lightConfig = ThemeConfig(
+    backgroundColor: const Color(0xFF1D261C),
+    cardColor: const Color(0xFF2E3B2C),
+    accentColor: const Color(0xFFD4AF37),
+    textColor: const Color(0xFFF1F8F0),
+    bgImageAsset: 'assets/images/зеленый.jpg',
+  );
+
+  static final pinkConfig = ThemeConfig(
+    backgroundColor: const Color(0xFF5A1827),
+    cardColor: const Color(0xFF8C263E),
+    accentColor: const Color(0xFFFFB7C5),
+    textColor: const Color(0xFFFFF0F2),
+    bgImageAsset: 'assets/images/розовый.jpg',
+  );
+}
