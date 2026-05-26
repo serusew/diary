@@ -232,7 +232,7 @@ class _DiaryAppState extends State<DiaryApp> {
   }
 }
 
-// --- ГЛАВНЫЙ ЭКРАН С ЭФФЕКТОМ МЯГКОГО СКРОЛЛА ---
+// --- ГЛАВНЫЙ ЭКРАН ---
 class DiaryHomePage extends StatefulWidget {
   final ThemeConfig config;
   final AppTheme currentTheme;
@@ -339,6 +339,49 @@ class _DiaryHomePageState extends State<DiaryHomePage> {
   String _t(String ru, String en) =>
       widget.currentLang == AppLanguage.ru ? ru : en;
 
+  // Функция вызова окна подтверждения удаления
+  Future<bool?> _showDeleteConfirmationDialog() {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: widget.config.cardColor,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(_t('Удалить?', 'Delete?')),
+        content: Text(
+          _t(
+            'Вы уверены, что хотите навсегда удалить эту запись из дневника?',
+            'Are you sure you want to permanently delete this diary entry?',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false), // Отмена свайпа
+            child: Text(
+              _t('Отмена', 'Cancel'),
+              style: TextStyle(
+                color: widget.config.textColor.withValues(alpha: 0.6),
+              ),
+            ),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () =>
+                Navigator.of(ctx).pop(true), // Подтверждение свайпа
+            child: Text(
+              _t('Удалить', 'Delete'),
+              style: const TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -442,7 +485,6 @@ class _DiaryHomePageState extends State<DiaryHomePage> {
                       : ShaderMask(
                           blendMode: BlendMode.dstIn,
                           shaderCallback: (Rect rect) {
-                            // Вычисляем верхнюю границу: исчезает на 0.0, когда список вверху
                             double topStop =
                                 (_scrollOffset / 40.0).clamp(0.0, 1.0) * 0.08;
 
@@ -476,6 +518,10 @@ class _DiaryHomePageState extends State<DiaryHomePage> {
                               return Dismissible(
                                 key: Key(entry.id),
                                 direction: DismissDirection.endToStart,
+                                // Проверка подтверждения удаления перед выполнением свайпа
+                                confirmDismiss: (direction) async {
+                                  return await _showDeleteConfirmationDialog();
+                                },
                                 background: Container(
                                   alignment: Alignment.centerRight,
                                   padding: const EdgeInsets.only(right: 20),
@@ -734,7 +780,7 @@ class _DiaryHomePageState extends State<DiaryHomePage> {
                         Icons.palette_rounded,
                         color: widget.config.accentColor,
                       ),
-                      title: Text(_t('Выбрать тему', 'Select Theme')),
+                      title: Text(_t('Выбрать тему', 'Select theme')),
                       backgroundColor: widget.config.cardColor,
                       collapsedBackgroundColor: widget.config.cardColor,
                       textColor: widget.config.accentColor,
