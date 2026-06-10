@@ -999,9 +999,7 @@ class _NewEntryScreenState extends State<NewEntryScreen> {
       widget.currentLang == AppLanguage.ru ? ru : en;
 
   void _pickInlineImage() async {
-    FilePickerResult? result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
+    FilePickerResult? result = await FilePicker.pickFiles(type: FileType.image);
     if (result != null && result.files.single.path != null) {
       String path = result.files.single.path!;
       setState(() {
